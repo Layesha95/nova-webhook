@@ -5,75 +5,74 @@ const axios = require("axios");
 const app = express();
 app.use(bodyParser.json());
 
-// 🔑 Your actual Page Access Token goes here
-const PAGE_ACCESS_TOKEN = "EAAJXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"; // replace with your real token
+const PAGE_ACCESS_TOKEN = "EAAT5VhnwplIBOxE8KqFvx0fo3JbNdk36XmZBzHxJ0NjVSC4HtTPLYXc49nG6xJv6yzXgLwntq9HnshyzGZAmFd9AZBxAZBtZBdlrvIyiLIOi7PwNoZC907NoNZA4xOsTs5SwnTHNgwZBH88xN0HM0Xh7KisLEOitZBZAj6KisiYKuzJZBPV7MLS0bZCS2PTZAdwZDZD";
 
-// 🧠 Nova's memory for Q&A
-const qaPairs = [
-  { question: "how much is a reading", answer: "Palm reading is Rs. 499. Horoscope is Rs. 599, Sir." },
-  { question: "can i send my palm photo", answer: "Yes, Sir. Please send a clear palm photo here." },
-  { question: "when will i get the reading", answer: "You will receive your full reading within 24 hours, Sir." }
+let qaPairs = [
+  { question: "how much is a reading", answer: "අත්රිදුමක් රු.499යි. ජාතකය රු.599යි සර්." },
+  { question: "can i send my palm photo", answer: "ඔව් සර්. කරුණාකර පැහැදිලි අත් පින්තූරයක් එවන්න." },
+  { question: "when will i get the reading", answer: "ඔබේ නියම විශ්ලේෂණය පැය 24ක් ඇතුළත ලැබෙනවා සර්." }
 ];
 
-// 🔍 Match message with memory
 function findBestMatch(msg) {
   msg = msg.toLowerCase();
   for (let pair of qaPairs) {
-    if (msg.includes(pair.question)) {
+    if (msg.includes(pair.question.toLowerCase())) {
       return pair.answer;
     }
   }
   return null;
 }
 
-// 💬 Send message back to Facebook
-function sendMessage(senderId, text) {
-  axios.post(`https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-    recipient: { id: senderId },
-    message: { text }
-  }).catch(err => {
-    console.error("Error sending message:", err.response?.data || err.message);
-  });
+function learnFromUser(msg) {
+  const parts = msg.split("=>");
+  if (parts.length === 2) {
+    const question = parts[0].trim().toLowerCase();
+    const answer = parts[1].trim();
+    qaPairs.push({ question, answer });
+    return "ඔයා කියපු එක මට මතක තියෙන්නෙ දැන් සර්.";
+  }
+  return null;
 }
 
-// ✅ Facebook verification
 app.get("/webhook", (req, res) => {
-  let VERIFY_TOKEN = "nova_verify_token";
-  let mode = req.query["hub.mode"];
-  let token = req.query["hub.verify_token"];
-  let challenge = req.query["hub.challenge"];
-  if (mode && token && mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("WEBHOOK_VERIFIED");
+  const VERIFY_TOKEN = "nova_verify";
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  if (mode && token === VERIFY_TOKEN) {
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
   }
 });
 
-// 📨 Handle incoming messages
-app.post("/webhook", (req, res) => {
-  let body = req.body;
+app.post("/webhook", async (req, res) => {
+  const body = req.body;
 
   if (body.object === "page") {
-    body.entry.forEach(function(entry) {
-      let webhookEvent = entry.messaging[0];
-      let senderId = webhookEvent.sender.id;
-      let msgText = webhookEvent.message?.text;
+    for (let entry of body.entry) {
+      for (let event of entry.messaging) {
+        const senderId = event.sender.id;
+        if (event.message && event.message.text) {
+          const msg = event.message.text;
+          let response = learnFromUser(msg) || findBestMatch(msg) || "සමාවෙන්න සර්, ඒක ගැන මට තව ඉගෙන ගන්න ඕනේ.";
 
-      if (msgText) {
-        console.log("Received:", msgText);
-        const reply = findBestMatch(msgText);
-        if (reply) {
-          sendMessage(senderId, reply);
-        } else {
-          sendMessage(senderId, "Sorry, Sir. Please wait while I check that for you.");
+          await axios.post(
+            `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+            {
+              recipient: { id: senderId },
+              message: { text: response }
+            }
+          );
         }
       }
-    });
-    res.status(200).send("EVENT_RECEIVED");
+    }
+    res.sendStatus(200);
   } else {
     res.sendStatus(404);
   }
 });
 
-app.listen(5000, () => console.log("Nova Webhook running on port 5000"));
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log("✅ Nova Facebook Chatbot Running on Port", PORT));
